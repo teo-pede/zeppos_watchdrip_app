@@ -732,15 +732,22 @@ Page({
             watchdrip = new Watchdrip()
             watchdrip.start(data);
         } catch (e) {
-            debug.log('LifeCycle Error ' + e)
-            e && e.stack && e.stack.split(/\n/).forEach((i) => debug.log('error stack:' + i))
+            console.log('Watchdrip app LifeCycle Error ' + e)
+            e && e.stack && e.stack.split(/\n/).forEach((i) => console.log('error stack:' + i))
+            hmApp.exit()
         }
     },
     build() {
         logger.debug("page build invoked");
     },
     onDestroy() {
-        logger.debug("page onDestroy invoked");
-        watchdrip.onDestroy();
+        try{
+            logger.debug("page onDestroy invoked");
+            watchdrip.onDestroy();
+        } catch (e) {
+            console.log('Watchdrip app LifeCycle Error onDestroy ' + e)
+            e && e.stack && e.stack.split(/\n/).forEach((i) => console.log('error stack:' + i))
+            hmApp.exit()
+        }
     },
 });

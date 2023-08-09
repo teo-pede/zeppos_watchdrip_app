@@ -5,13 +5,13 @@ import {Commands, SERVER_INFO_URL, SERVER_URL,} from "../utils/config/constants"
 const messageBuilder = new MessageBuilder();
 
 const fetchInfo = async (ctx, url) => {
-    let resp = {};
+    try{
+        let resp = {};
 
-    await fetch({
-        url: url,
-        method: "GET",
-    })
-        .then((response) => {
+        await fetch({
+            url: url,
+            method: "GET",
+        }).then((response) => {
             if (!response.body)
                 throw Error('No Data')
 
@@ -39,6 +39,16 @@ const fetchInfo = async (ctx, url) => {
                 }
             }
         )
+    } catch (error) {
+        console.log('error in fetch on app-side: ' + error)
+        if (ctx !== false) {
+            ctx.response({
+                data: { result: {error: true, message: 'error fetch on app-side'} },
+            })
+        } else {
+            return {data: { result: {error: true, message: 'error fetch on app-side'} }}
+        }
+    }
 };
 
 const sendToWatch = async () => {
