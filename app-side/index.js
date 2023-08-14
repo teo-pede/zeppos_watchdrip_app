@@ -1,12 +1,10 @@
 import {MessageBuilder} from "../shared/message";
 import {Commands, SERVER_INFO_URL, SERVER_URL,} from "../utils/config/constants";
-import {WATCHDRIP_CONFIG,WATCHDRIP_CONFIG_DEFAULTS} from "../utils/config/global-constants";
-import {str2json} from "../shared/data";
 
 // const logger = DeviceRuntimeCore.HmLogger.getLogger("watchdrip_side");
 const messageBuilder = new MessageBuilder();
 
-const fetchInfo = async (ctx, url) => {
+const fetchInfo = async (ctx, url, hours) => {
     try{
         let resp = {};
 
@@ -24,17 +22,7 @@ const fetchInfo = async (ctx, url) => {
                 console.log("log", data);
                 // const parsed = JSON.stringify(data);
                 // console.log("log", parsed);
-                let HOURS = 2;
-                try{
-                    var configStr = hmFS.SysProGetChars(WATCHDRIP_CONFIG);
-                    if (!configStr) {
-                        HOURS = WATCHDRIP_CONFIG_DEFAULTS.wfHrGraph
-                    } else {
-                        HOURS = str2json(configStr).wfHrGraph
-                    }
-                } catch (e) {
-                    console.log('error setting wfHrGraph from memory: ' + e)
-                }
+                let HOURS = (typeof hours === 'undefined') ? 2 : hours
                 let resBody = typeof data === 'string' ?  JSON.parse(data) : data
                 if (resBody['graph'] !== undefined && HOURS < 4){
                     if (HOURS === 0){
@@ -129,7 +117,7 @@ AppSideService({
             let url = SERVER_URL;
             switch (jsonRpc.method) {
                 case Commands.getInfo:
-                    return fetchInfo(ctx, url + SERVER_INFO_URL + "?" + params);
+                    return fetchInfo(ctx, url + SERVER_INFO_URL + "?" + params, jsonRpc.hours);
                 case Commands.getImg:
                     return fetchRaw(ctx, url + "get_img.php?" + params);
                 case Commands.putTreatment:
