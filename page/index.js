@@ -220,8 +220,12 @@ class Watchdrip {
         Object.entries(this.watchdripConfig).forEach(entry => {
             const [key, value] = entry;
             let stateImg = RADIO_OFF
-            if (value) {
-                stateImg = RADIO_ON
+            if (typeof value === "number"){
+                stateImg = value + '.png'
+            } else {
+                if (value) {
+                    stateImg = RADIO_ON
+                }
             }
             dataList.push({
                 key: key,
@@ -256,7 +260,15 @@ class Watchdrip {
                     debug.log(index);
                     const key = this.configDataList[index].key
                     let val = this.watchdripConfig[key]
-                    this.watchdripConfig[key] = !val;
+                    if (typeof val === "number"){
+                        if (val < 4){
+                            this.watchdripConfig[key] = val + 1
+                        } else {
+                            this.watchdripConfig[key] = 0
+                        }
+                    } else {
+                        this.watchdripConfig[key] = !val;
+                    }
                     this.saveConfig();
                     //update list
                     this.configScrollList.setProperty(hmUI.prop.UPDATE_DATA, {
@@ -377,76 +389,80 @@ class Watchdrip {
     }
 
     fetchInfo(params = '') {
-        debug.log("fetchInfo");
-        let isDisplay = true;
-        if (this.fetchMode === FetchMode.HIDDEN) {
-            isDisplay = false;
-        }
-
-        this.resetLastUpdate();
-
-        if (messageBuilder.connectStatus() === false) {
-            debug.log("No BT Connection");
-            if (isDisplay) {
-                this.showMessage(getText("status_no_bt"));
-            } else {
-                this.handleGoBack();
+        try{
+            debug.log("fetchInfo");
+            let isDisplay = true;
+            if (this.fetchMode === FetchMode.HIDDEN) {
+                isDisplay = false;
             }
-            return;
-        }
 
-        if (params === "") {
-            params = WATCHDRIP_ALARM_CONFIG_DEFAULTS.fetchParams;
-        }
+            this.resetLastUpdate();
 
-        if (isDisplay) {
-            this.showMessage(getText("connecting"));
-        } else {
-            this.startLoader();
-        }
-        this.updatingData = true;
-        messageBuilder
-            .request({
-                method: Commands.getInfo,
-                params: params,
-            }, {timeout: 5000})
-            .then((data) => {
-                debug.log("received data");
-                let {result: info = {}} = data;
-                //debug.log(info);
-                try {
-                    if (info.error) {
-                        debug.log("Error");
-                        debug.log(info);
-                        return;
-                    }
-                    let dataInfo = str2json(info);
-                    this.lastInfoUpdate = this.saveInfo(info);
-                    info = null;
-                    if (isDisplay) {
-                        this.watchdripData.setData(dataInfo);
-                        this.watchdripData.updateTimeDiff();
-                        dataInfo = null;
-
-                        this.updateWidgets();
-                    }
-                } catch (e) {
-                    debug.log("error:" + e);
-                }
-            })
-            .catch((error) => {
-                debug.log("fetch error:" + error);
-            })
-            .finally(() => {
-                this.updatingData = false;
-                if (isDisplay && !this.lastUpdateSucessful) {
-                    this.showMessage(getText("status_start_watchdrip"));
-                }
-                if (!isDisplay) {
-                    this.stopLoader();
+            if (messageBuilder.connectStatus() === false) {
+                debug.log("No BT Connection");
+                if (isDisplay) {
+                    this.showMessage(getText("status_no_bt"));
+                } else {
                     this.handleGoBack();
                 }
-            });
+                return;
+            }
+
+            if (params === "") {
+                params = WATCHDRIP_ALARM_CONFIG_DEFAULTS.fetchParams;
+            }
+
+            if (isDisplay) {
+                this.showMessage(getText("connecting"));
+            } else {
+                this.startLoader();
+            }
+            this.updatingData = true;
+            messageBuilder
+                .request({
+                    method: Commands.getInfo,
+                    params: params,
+                }, {timeout: 5000})
+                .then((data) => {
+                    debug.log("received data");
+                    let {result: info = {}} = data;
+                    //debug.log(info);
+                    try {
+                        if (info.error) {
+                            debug.log("Error");
+                            debug.log(info);
+                            return;
+                        }
+                        let dataInfo = str2json(info);
+                        this.lastInfoUpdate = this.saveInfo(info);
+                        info = null;
+                        if (isDisplay) {
+                            this.watchdripData.setData(dataInfo);
+                            this.watchdripData.updateTimeDiff();
+                            dataInfo = null;
+
+                            this.updateWidgets();
+                        }
+                    } catch (e) {
+                        debug.log("error:" + e);
+                    }
+                })
+                .catch((error) => {
+                    debug.log("fetch error:" + error);
+                })
+                .finally(() => {
+                    this.updatingData = false;
+                    if (isDisplay && !this.lastUpdateSucessful) {
+                        this.showMessage(getText("status_start_watchdrip"));
+                    }
+                    if (!isDisplay) {
+                        this.stopLoader();
+                        this.handleGoBack();
+                    }
+                });
+        } catch (e) {
+            debug.log("error in fetchInfo:" + e);
+        }
     }
 
     startLoader() {

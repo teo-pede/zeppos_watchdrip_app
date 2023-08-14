@@ -1,5 +1,7 @@
 import {MessageBuilder} from "../shared/message";
 import {Commands, SERVER_INFO_URL, SERVER_URL,} from "../utils/config/constants";
+import {WATCHDRIP_CONFIG,WATCHDRIP_CONFIG_DEFAULTS} from "../utils/config/global-constants";
+import {str2json} from "../shared/data";
 
 // const logger = DeviceRuntimeCore.HmLogger.getLogger("watchdrip_side");
 const messageBuilder = new MessageBuilder();
@@ -20,9 +22,50 @@ const fetchInfo = async (ctx, url) => {
         .then((data) => {
             try {
                 console.log("log", data);
-               // const parsed = JSON.stringify(data);
-               // console.log("log", parsed);
-                resp = data;
+                // const parsed = JSON.stringify(data);
+                // console.log("log", parsed);
+                let HOURS = 2;
+                try{
+                    var configStr = hmFS.SysProGetChars(WATCHDRIP_CONFIG);
+                    if (!configStr) {
+                        HOURS = WATCHDRIP_CONFIG_DEFAULTS.wfHrGraph
+                    } else {
+                        HOURS = str2json(configStr).wfHrGraph
+                    }
+                } catch (e) {
+                    console.log('error setting wfHrGraph from memory: ' + e)
+                }
+                let resBody = typeof data === 'string' ?  JSON.parse(data) : data
+                if (resBody['graph'] !== undefined && HOURS < 4){
+                    if (HOURS === 0){
+                        delete resBody['graph']
+                    } else {
+                        const time_graph = 60 * 60 * 1000 * HOURS / resBody.graph.fuzzer
+                        const end = resBody.graph.end
+                        const start = resBody.graph.start
+                        const new_start = end - time_graph - 32
+                        resBody.graph.lines.forEach((line, m) => {
+                            if (!line.name.startsWith("line")){
+                                let new_points = line.points.filter(function (point) {
+                                    return point[0] >= new_start
+                                });
+                                if (new_points.length > 0){
+                                    resBody.graph.lines[m].points = new_points
+                                } else {
+                                    delete resBody.graph.lines[m]
+                                }
+                            } else {
+                                line.points.forEach((point, n) => {
+                                    if (point[0] === start){
+                                        resBody.graph.lines[m].points[n][0] = new_start
+                                    }
+                                })
+                            }
+                        })
+                        resBody.graph.start = new_start
+                    }
+                }
+                resp = JSON.stringify(resBody);
             } catch (error) {
                 throw Error(error.message)
             }

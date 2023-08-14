@@ -20,6 +20,7 @@ export const WATCHDRIP_CONFIG_DEFAULTS = {
     disableUpdates: false,
     showLog: false,
     useAppFetch: false,
+    wfHrGraph : 2,
 };
 
 export const WATCHDRIP_ALARM_CONFIG_DEFAULTS = {

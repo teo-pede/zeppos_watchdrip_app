@@ -19,6 +19,9 @@ msgstr "Show log"
 msgid "useAppFetch"
 msgstr "Use Alarms for fetch"
 
+msgid "wfHrGraph"
+msgstr "Hours in wf graph"
+
 msgid "data_upd_disabled"
 msgstr "Data updates disabled"
 
