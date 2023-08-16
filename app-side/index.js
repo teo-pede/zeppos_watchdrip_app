@@ -43,11 +43,7 @@ const fetchInfo = async (ctx, url, hours) => {
                                     delete resBody.graph.lines[m]
                                 }
                             } else {
-                                line.points.forEach((point, n) => {
-                                    if (point[0] === start){
-                                        resBody.graph.lines[m].points[n][0] = new_start
-                                    }
-                                })
+                                resBody.graph.lines[m].points[0][0] = new_start
                             }
                         })
                         resBody.graph.start = new_start
