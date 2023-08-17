@@ -53,6 +53,7 @@ import {gotoSubpage} from "../shared/navigate";
 const logger = DeviceRuntimeCore.HmLogger.getLogger("watchdrip_app");
 
 const {messageBuilder} = getApp()._options.globalData;
+const {appId} = hmApp.packageInfo();
 
 /*
 typeof DebugText
@@ -63,13 +64,23 @@ typeof Watchdrip
 */
 var watchdrip = null;
 
-const PagesType = {MAIN: 'main', CONFIG: 'config'};
+const GoBackType = {NONE: 'none', GO_BACK: 'go_back', HIDE_PAGE: 'hide_page', HIDE: 'hide'};
+const PagesType = {
+    MAIN: 'main',
+    UPDATE: 'update',
+    UPDATE_LOCAL: 'update_local',
+    HIDE: 'hide',
+    CONFIG: 'config',
+    ADD_TREATMENT: 'add_treatment'
+};
+const FetchMode = {DISPLAY: 'display', HIDDEN: 'hidden'};
 
 class Watchdrip {
     constructor() {
         this.timeSensor = hmSensor.createSensor(hmSensor.id.TIME);
         this.vibrate = hmSensor.createSensor(hmSensor.id.VIBRATE);
         this.globalNS = getGlobal();
+        this.goBackType = GoBackType.NONE;
 
         this.system_alarm_id = null;
         this.lastInfoUpdate = 0;
@@ -79,6 +90,7 @@ class Watchdrip {
         this.updatingData = false;
         this.intervalTimer = null;
         this.updateIntervals = DATA_UPDATE_INTERVAL_MS;
+        this.fetchMode = FetchMode.DISPLAY;
 
         this.readConfig();
         this.createWatchdripDir();
@@ -89,20 +101,35 @@ class Watchdrip {
         debug.log("start");
         debug.log(data);
         let pageTitle = '';
+        this.goBackType = GoBackType.NONE;
         switch (data.page) {
             case PagesType.MAIN:
                 let pkg = hmApp.packageInfo();
                 pageTitle = pkg.name
                 this.main_page();
                 break;
+            case PagesType.UPDATE:
+                this.goBackType = GoBackType.HIDE;
+                this.readAlarmConfig();
+                this.watchdripAlarmConfig = {...this.watchdripAlarmConfig, ...data.params};
+                this.saveAlarmConfig();
+                this.fetch_page();
+                break;
+            case PagesType.UPDATE_LOCAL:
+                this.goBackType = GoBackType.HIDE;
+                this.readAlarmConfig();
+                this.fetch_page();
+                break;
+            case PagesType.HIDE:
+                this.hide_page();
+                break;
             case PagesType.CONFIG:
                 pageTitle = getText("settings");
                 this.config_page();
                 break;
-            default:
-                let pkgDef = hmApp.packageInfo();
-                pageTitle = pkgDef.name
-                this.main_page();
+            case PagesType.ADD_TREATMENT:
+                pageTitle = getText("add_treatment");
+                this.add_treatment_page()
                 break;
         }
 
@@ -136,6 +163,8 @@ class Watchdrip {
     }
 
     main_page() {
+        hmSetting.setBrightScreen(60);
+        hmApp.setScreenKeep(true);
         this.watchdripData = new WatchdripData(this.timeSensor);
         let pkg = hmApp.packageInfo();
         this.versionTextWidget = hmUI.createWidget(hmUI.widget.TEXT, {...VERSION_TEXT, text: "v" + pkg.version});
@@ -176,6 +205,13 @@ class Watchdrip {
                 gotoSubpage(PagesType.CONFIG);
             },
         });
+
+        hmUI.createWidget(hmUI.widget.BUTTON, {
+            ...COMMON_BUTTON_ADD_TREATMENT,
+            click_func: (button_widget) => {
+                gotoSubpage(PagesType.ADD_TREATMENT);
+            },
+        });
     }
 
     getConfigData() {
@@ -208,6 +244,10 @@ class Watchdrip {
             data_type_config: dataTypeConfig,
             data_type_config_count: dataTypeConfig.length
         }
+    }
+
+    add_treatment_page() {
+        //not implemented
     }
 
     config_page() {
@@ -322,15 +362,49 @@ class Watchdrip {
         }
     }
 
+    fetch_page() {
+        debug.log("fetch_page");
+        hmUI.setStatusBarVisible(false);
+        this.prepareNextAlarm();
+        if (this.watchdripConfig.disableUpdates || !this.watchdripConfig.useAppFetch) {
+            this.handleGoBack();
+            return;
+        }
+        hmSetting.setBrightScreen(999);
+        this.progressWidget = hmUI.createWidget(hmUI.widget.IMG, IMG_LOADING_PROGRESS);
+        this.progressAngle = 0;
+        this.stopLoader();
+        this.fetchMode = FetchMode.HIDDEN;
+        this.fetchInfo(this.watchdripAlarmConfig.fetchParams);
+    }
+
+    hide_page() {
+        hmApp.setScreenKeep(false);
+        //hmSetting.setBrightScreenCancel();
+        hmSetting.setBrightScreen(1)
+        hmSetting.setScreenOff();
+        //hmApp.goBack();
+        //hmApp.exit();
+        hmApp.gotoHome();
+    }
+
     fetchInfo(params = '') {
         try{
             debug.log("fetchInfo");
+            let isDisplay = true;
+            if (this.fetchMode === FetchMode.HIDDEN) {
+                isDisplay = false;
+            }
 
             this.resetLastUpdate();
 
             if (messageBuilder.connectStatus() === false) {
                 debug.log("No BT Connection");
-                this.showMessage(getText("status_no_bt"));
+                if (isDisplay) {
+                    this.showMessage(getText("status_no_bt"));
+                } else {
+                    this.handleGoBack();
+                }
                 return;
             }
 
@@ -338,7 +412,11 @@ class Watchdrip {
                 params = WATCHDRIP_ALARM_CONFIG_DEFAULTS.fetchParams;
             }
 
-            this.showMessage(getText("connecting"));
+            if (isDisplay) {
+                this.showMessage(getText("connecting"));
+            } else {
+                this.startLoader();
+            }
             this.updatingData = true;
             messageBuilder
                 .request({
@@ -358,11 +436,13 @@ class Watchdrip {
                         let dataInfo = str2json(info);
                         this.lastInfoUpdate = this.saveInfo(info);
                         info = null;
-                        this.watchdripData.setData(dataInfo);
-                        this.watchdripData.updateTimeDiff();
-                        dataInfo = null;
+                        if (isDisplay) {
+                            this.watchdripData.setData(dataInfo);
+                            this.watchdripData.updateTimeDiff();
+                            dataInfo = null;
 
-                        this.updateWidgets();
+                            this.updateWidgets();
+                        }
                     } catch (e) {
                         debug.log("error:" + e);
                     }
@@ -372,13 +452,39 @@ class Watchdrip {
                 })
                 .finally(() => {
                     this.updatingData = false;
-                    if (!this.lastUpdateSucessful) {
+                    if (isDisplay && !this.lastUpdateSucessful) {
                         this.showMessage(getText("status_start_watchdrip"));
+                    }
+                    if (!isDisplay) {
+                        this.stopLoader();
+                        this.handleGoBack();
                     }
                 });
         } catch (e) {
             debug.log("error in fetchInfo:" + e);
         }
+    }
+
+    startLoader() {
+        this.progressWidget.setProperty(hmUI.prop.VISIBLE, true);
+        this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
+        this.progressTimer = this.globalNS.setInterval(() => {
+            this.updateLoader();
+        }, PROGRESS_UPDATE_INTERVAL_MS);
+    }
+
+    updateLoader() {
+        this.progressAngle = this.progressAngle + PROGRESS_ANGLE_INC;
+        if (this.progressAngle >= 360) this.progressAngle = 0;
+        this.progressWidget.setProperty(hmUI.prop.MORE, {angle: this.progressAngle});
+    }
+
+    stopLoader() {
+        if (this.progressTimer !== null) {
+            this.globalNS.clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+        this.progressWidget.setProperty(hmUI.prop.VISIBLE, false);
     }
 
     updateWidgets() {
@@ -421,6 +527,14 @@ class Watchdrip {
 
     showMessage(text) {
         this.setBgElementsVisibility(false);
+        //use for autowrap
+        //
+        // let lay = hmUI.getTextLayout(text, {
+        //     text_size: MESSAGE_TEXT_SIZE,
+        //     text_width: MESSAGE_TEXT_WIDTH,
+        //     wrapped: 1
+        // });
+        // debug.log(lay);
         this.messageTextWidget.setProperty(hmUI.prop.MORE, {text: text});
         this.setMessageVisibility(true);
     }
@@ -498,31 +612,139 @@ class Watchdrip {
         return time;
     }
 
+    saveAlarmId(alarm_id) {
+        hmFS.SysProSetInt64(WF_SYSTEM_ALARM_ID, alarm_id);
+    }
+
+    readAlarmId() {
+        return hmFS.SysProGetInt64(WF_SYSTEM_ALARM_ID);
+    }
+
+    readAlarmConfig() {
+        var configStr = hmFS.SysProGetChars(WATCHDRIP_ALARM_CONFIG);
+        if (!configStr) {
+            this.watchdripAlarmConfig = WATCHDRIP_ALARM_CONFIG_DEFAULTS;
+            this.saveAlarmConfig();
+        } else {
+            try {
+                this.watchdripAlarmConfig = str2json(configStr);
+            } catch (e) {
+
+            }
+        }
+    }
+
+    saveAlarmConfig() {
+        hmFS.SysProSetChars(WATCHDRIP_ALARM_CONFIG, json2str(this.watchdripAlarmConfig));
+    }
+
+    disableCurrentAlarm() {
+        var alarm_id = this.readAlarmId(); //read saved alarm to disable
+        if (alarm_id && alarm_id !== -1) {
+            debug.log("stop old app alarm");
+            hmApp.alarmCancel(alarm_id);
+            this.saveAlarmId('-1');
+        }
+    }
+
+    prepareNextAlarm() {
+        this.disableCurrentAlarm();
+        if (this.watchdripConfig.disableUpdates || !this.watchdripConfig.useAppFetch) {
+            if (this.system_alarm_id !== null) {
+                hmApp.alarmCancel(this.system_alarm_id);
+            }
+            return;
+        }
+        debug.log("Next alarm in " + this.watchdripAlarmConfig.fetchInterval + "s");
+        if (this.system_alarm_id == null) {
+            this.system_alarm_id = hmApp.alarmNew({
+                appid: appId,
+                url: "page/index",
+                param: PagesType.UPDATE_LOCAL,
+                delay: this.watchdripAlarmConfig.fetchInterval,
+            });
+            this.saveAlarmId(this.system_alarm_id);
+        }
+    }
+
+    handleGoBack() {
+        switch (this.goBackType) {
+            case GoBackType.NONE:
+                break;
+            case GoBackType.GO_BACK:
+                hmApp.goBack();
+                break;
+            case GoBackType.HIDE:
+                this.hide_page();
+                break;
+            case GoBackType.HIDE_PAGE:
+                gotoSubpage(PagesType.HIDE);
+                break;
+        }
+    }
+
+
+    fetchImg() {
+        const fileName = SERVER_IMAGE_URL;
+        messageBuilder
+            .request({
+                method: Commands.getImg,
+                params: fileName,
+            })
+            .then((data) => {
+                logger.log("receive data");
+                const {result = {}} = data;
+                debug.log(`Received file size: ${result.length} bytes`);
+                let filePath = fs.fullPath(fileName);
+                debug.log(filePath);
+                let file = fs.getSelfPath() + "/assets";
+                const [fileNameArr, err] = hmFS.readdir(file);
+                debug.log(file);
+                debug.log(fileNameArr);
+
+                const hex = Buffer.from(result, "base64");
+
+                fs.writeRawFileSync(filePath, hex);
+                var res = fs.statSync(filePath);
+                debug.log(res);
+                // Image view
+                let view = hmUI.createWidget(hmUI.widget.IMG, {
+                    x: px(0),
+                    y: px(0),
+                    src: fileName,
+                });
+            });
+    }
+
+    vibrateNow() {
+        this.vibrate.stop();
+        this.vibrate.scene = 24;
+        this.vibrate.start();
+    }
+
     onDestroy() {
+        //this.disableCurrentAlarm(); //do not stop alarm on destroy
         this.stopDataUpdates();
         this.vibrate.stop();
         hmSetting.setBrightScreenCancel();
     }
 }
 
-let data = {page: PagesType.MAIN};
-
 Page({
     onInit(p) {
-        console.log("page onInit");
         try {
-            if (!(!p || p === 'undefined')) {
-                data = JSON.parse(p);
-            }
-        } catch (e) {
-            data = {page: p}
-        }
-    },
-    build() {
-        try {
-            logger.debug("page build invoked");
             debug = new DebugText();
             debug.setLines(20);
+            console.log("page onInit");
+            let data = {page: PagesType.MAIN};
+            try {
+                if (!(!p || p === 'undefined')) {
+                    data = JSON.parse(p);
+                }
+            } catch (e) {
+                data = {page: p}
+            }
+
             watchdrip = new Watchdrip()
             watchdrip.start(data);
         } catch (e) {
@@ -530,6 +752,9 @@ Page({
             e && e.stack && e.stack.split(/\n/).forEach((i) => console.log('error stack:' + i))
             hmApp.exit()
         }
+    },
+    build() {
+        logger.debug("page build invoked");
     },
     onDestroy() {
         try{
