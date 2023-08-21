@@ -31,7 +31,7 @@ const fetchInfo = async (ctx, url, hours) => {
                         const time_graph = 60 * 60 * 1000 * HOURS / resBody.graph.fuzzer
                         const end = resBody.graph.end
                         const start = resBody.graph.start
-                        const new_start = end - time_graph - 32
+                        const new_start = end - time_graph - (20 * 60 * 1000 * HOURS / resBody.graph.fuzzer) -2
                         resBody.graph.lines.forEach((line, m) => {
                             if (!line.name.startsWith("line")){
                                 let new_points = line.points.filter(function (point) {
